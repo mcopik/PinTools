@@ -2,6 +2,7 @@
 #include <iostream>
 #include <fstream>
 #include <unordered_map>
+#include <string>
 
 // For some reason, tuple canno 
 //#include <tuple>
@@ -60,7 +61,9 @@ struct BranchStatistics
     PREDICTOR predictor;
     // first field - counts, second fields - count mispredicted
     std::vector<int64_t> mispredicted_distances;
-    std::unordered_map<ADDRINT, std::pair<int32_t, int32_t>> branches;
+    typedef std::string key_t;
+    std::unordered_map<key_t, std::pair<int32_t, int32_t>> branches;
+    std::unordered_map<ADDRINT, key_t> map_dbgs;
     uint64_t branch_count = 0;
     uint64_t branch_predicted_correctly = 0;
     // mispredictions where branchs was indeed taken
@@ -73,8 +76,27 @@ void before_branch(CONTEXT *ctx, ADDRINT inst_ptr, bool taken,
         ADDRINT target, void * _stats)
 {
     BranchStatistics * stats = static_cast<BranchStatistics*>(_stats);
+
     // Instruction pointer
     ADDRINT BeforeIP = (ADDRINT)PIN_GetContextReg(ctx, REG_INST_PTR);
+    std::string fileName;
+    auto dbg_it = stats->map_dbgs.find(BeforeIP);
+    if(dbg_it != stats->map_dbgs.end()) {
+        fileName = (*dbg_it).second;
+    } else {
+        int32_t column, line;
+        std::string fileName;
+        PIN_LockClient();
+        PIN_GetSourceLocation(BeforeIP, &column, &line, &fileName);
+        PIN_UnlockClient();
+        std::ostringstream ss;
+        ss << fileName << "_" << line << "_" << column;
+        fileName = ss.str();
+        if(fileName == "")
+            fileName = "unknown";
+        stats->map_dbgs[BeforeIP] = fileName;
+    }
+
     auto branch_prediction = stats->predictor.GetPrediction(BeforeIP);
     // Update predictor: was it taken, what we predict and what is the branch target
     stats->predictor.UpdatePredictor(BeforeIP, taken, branch_prediction, target);
@@ -83,12 +105,12 @@ void before_branch(CONTEXT *ctx, ADDRINT inst_ptr, bool taken,
     stats->mispredicted_not_taken += taken != branch_prediction && taken;
     // did tage mispredict?
     bool mispredicted = taken != branch_prediction;
-    auto it = stats->branches.find(BeforeIP);
+    auto it = stats->branches.find(fileName);
     if(it != stats->branches.end()) {
         it->second.first += 1;
         it->second.second += mispredicted;
     } else {
-        stats->branches[ BeforeIP ] = std::make_pair(1, mispredicted);
+        stats->branches[fileName] = std::make_pair(1, mispredicted);
     }
     if(taken != branch_prediction) {
         if(inst_ptr < target) {
@@ -130,7 +152,6 @@ void trace(TRACE trace, void * stats)
         for(INS ins = BBL_InsHead(bb); INS_Valid(ins); ins = INS_Next(ins) ) {
             // https://github.com/jingpu/pintools/blob/master/source/tools/ToolUnitTests/branch_target_addr.cpp
             if(INS_IsBranch(ins)) {
-                std::cerr << stats << '\n';
                 INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)before_branch,
                                    IARG_CONTEXT, IARG_INST_PTR, IARG_BRANCH_TAKEN,
                                    IARG_BRANCH_TARGET_ADDR,
@@ -150,7 +171,10 @@ void finish(int32_t code, void * _stats)
     // Occurence Count - Mispredicted Count - Predicted Count - 0 - 0
     std::ofstream out_file((output_file_param.Value() + "_branches").c_str(), std::ios::app);
     for(const auto & val : stats->branches)
-        out_file << val.second.first << ' ' << val.second.second << ' ' << (val.second.first - val.second.second ) << ' ' << 0 << ' ' << 0 << '\n';
+        out_file << val.first << ' ' << val.second.first << ' '
+            << val.second.second << ' '
+            << (val.second.first - val.second.second )
+            << ' ' << 0 << ' ' << 0 << '\n';
     out_file.close();
     out_file.open( (output_file_param.Value() + "_summary").c_str(), std::ios::app);
     int mispredicted = (stats->branch_count - stats->branch_predicted_correctly);
@@ -160,6 +184,7 @@ void finish(int32_t code, void * _stats)
 
 int main(int argc, char ** argv)
 {
+    PIN_InitSymbols();
     if (PIN_Init(argc, argv))
         return 1;
     //BlockStatistics block_stats;
