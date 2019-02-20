@@ -32,7 +32,7 @@ SRC_FILES += ${TAGE_PREDICTOR}/predictor.cc
 all: $(OBJDIR)$(TOOL)$(PINTOOL_SUFFIX)
 
 $(OBJDIR)%$(OBJ_SUFFIX): %.cpp
-	g++ -std=c++11 $(TOOL_CXXFLAGS) $(CXXFLAGS) -c -o $@ $<
+	$(CXX) -std=c++11 $(TOOL_CXXFLAGS) $(CXXFLAGS) -c -o $@ $<
 
 clean:
 	rm $(OBJDIR)*
