@@ -25,9 +25,8 @@ include $(TOOLS_ROOT)/Config/makefile.default.rules
 
 TOOL = branch_histogram
 
-TAGE_PREDICTOR = /home/mcopik/projects/ETH/statistics/AndreSeznec/cbp32KB/
-CXXFLAGS += -I${TAGE_PREDICTOR}
-SRC_FILES += ${TAGE_PREDICTOR}/predictor.cc
+CXXFLAGS += -I${TAGE_ROOT}
+SRC_FILES += ${TAGE_ROOT}/predictor.cc
 
 all: $(OBJDIR)$(TOOL)$(PINTOOL_SUFFIX)
 
